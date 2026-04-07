@@ -150,7 +150,10 @@ def scan_session(jsonl_path, quick=True):
         "msg_count": 0,
         "first_user_msg": "",
         "project": "",
+        "project_short": "",
         "cwd": "",
+        "git_branch": "",
+        "title": "",
         "todos": [],
         "files_written": set(),
         "files_read": set(),
@@ -158,9 +161,12 @@ def scan_session(jsonl_path, quick=True):
 
     parent = os.path.basename(os.path.dirname(jsonl_path))
     info["project"] = decode_project_path(parent)
+    parts = info["project"].rstrip("/").split("/")
+    info["project_short"] = parts[-1] if parts else ""
 
-    line_limit = 50 if quick else None
+    line_limit = 80 if quick else None
     line_num = 0
+    last_todo_summary = ""
 
     with open(jsonl_path, "r") as f:
         for line in f:
@@ -182,12 +188,22 @@ def scan_session(jsonl_path, quick=True):
             if t in ("user", "assistant"):
                 info["msg_count"] += 1
 
+            if not info["git_branch"]:
+                gb = obj.get("gitBranch", "")
+                if gb:
+                    info["git_branch"] = gb
+
+            if not info["cwd"]:
+                ec = obj.get("cwd", "")
+                if ec and ec != ".":
+                    info["cwd"] = ec
+
             if t == "user" and not info["first_user_msg"]:
                 text = extract_user_text(obj)
                 if text:
-                    info["first_user_msg"] = text[:100]
+                    info["first_user_msg"] = text[:200]
 
-            if not quick and t == "assistant":
+            if t == "assistant":
                 blocks = extract_assistant_blocks(obj)
                 for block in blocks:
                     bt = block.get("type", "")
@@ -197,15 +213,25 @@ def scan_session(jsonl_path, quick=True):
 
                         if name == "todowrite" and "todos" in inp:
                             info["todos"] = inp["todos"]
+                            in_progress = [
+                                t
+                                for t in inp["todos"]
+                                if t.get("status") == "in_progress"
+                            ]
+                            if in_progress:
+                                last_todo_summary = in_progress[0].get("content", "")
+                            elif inp["todos"]:
+                                last_todo_summary = inp["todos"][0].get("content", "")
 
-                        if name in ("edit", "write"):
-                            fp = inp.get("filePath", "")
-                            if fp:
-                                info["files_written"].add(fp)
-                        elif name == "read":
-                            fp = inp.get("filePath", "")
-                            if fp:
-                                info["files_read"].add(fp)
+                        if not quick:
+                            if name in ("edit", "write"):
+                                fp = inp.get("filePath", "")
+                                if fp:
+                                    info["files_written"].add(fp)
+                            elif name == "read":
+                                fp = inp.get("filePath", "")
+                                if fp:
+                                    info["files_read"].add(fp)
 
                         if not info["cwd"]:
                             if inp.get("workdir"):
@@ -215,7 +241,63 @@ def scan_session(jsonl_path, quick=True):
                                 if fp.startswith("/"):
                                     info["cwd"] = os.path.dirname(fp)
 
+    info["title"] = _build_title(info, last_todo_summary)
+
+    if quick and not last_todo_summary and info["size"] > 20000:
+        tail_todo = _scan_tail_for_todo(jsonl_path)
+        if tail_todo:
+            info["title"] = tail_todo[:60]
+
     return info
+
+
+def _scan_tail_for_todo(jsonl_path, tail_bytes=50000):
+    last_todo_summary = ""
+    try:
+        fsize = os.path.getsize(jsonl_path)
+        offset = max(0, fsize - tail_bytes)
+        with open(jsonl_path, "r") as f:
+            if offset > 0:
+                f.seek(offset)
+                f.readline()
+            for line in f:
+                line = line.strip()
+                if not line or "todowrite" not in line.lower():
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("type") != "assistant":
+                    continue
+                for block in extract_assistant_blocks(obj):
+                    if block.get("type") != "tool_use":
+                        continue
+                    if block.get("name", "").lower() != "todowrite":
+                        continue
+                    todos = block.get("input", {}).get("todos", [])
+                    in_progress = [t for t in todos if t.get("status") == "in_progress"]
+                    if in_progress:
+                        last_todo_summary = in_progress[0].get("content", "")
+                    elif todos:
+                        last_todo_summary = todos[0].get("content", "")
+    except Exception:
+        pass
+    return last_todo_summary
+
+
+def _build_title(info, last_todo_summary):
+    if last_todo_summary:
+        return last_todo_summary[:60]
+
+    first_msg = info.get("first_user_msg", "")
+    if first_msg:
+        clean = re.sub(r"[\n\r\t]+", " ", first_msg).strip()
+        if len(clean) > 50:
+            clean = clean[:47] + "..."
+        return clean
+
+    return "(empty session)"
 
 
 def find_all_sessions():
@@ -578,21 +660,14 @@ def cmd_list(args):
         print(f"Looking in: {CLAUDE_PROJECTS}")
         return
 
-    print(
-        f"\n{'#':<4} {'Session ID':<14} {'Project':<35} {'Date':<12} {'Size':<8} {'Msgs':<6} Title"
-    )
-    print("─" * 120)
+    print(f"\n{'#':<4} {'Date':<12} {'Size':<8} {'Msgs':<6} {'Project':<20} Title")
+    print("─" * 100)
     for idx, info in enumerate(results, 1):
-        sid = info["session_id"][:12]
-        proj = info["project"][-33:]
         dt = datetime.fromtimestamp(info["mtime"]).strftime("%m-%d %H:%M")
         sz = f"{info['size'] // 1024}KB"
-        title = (
-            info["first_user_msg"][:40] if info["first_user_msg"] else "(no user msg)"
-        )
-        print(
-            f"{idx:<4} {sid:<14} {proj:<35} {dt:<12} {sz:<8} {info['msg_count']:<6} {title}"
-        )
+        proj = info["project_short"][:18]
+        title = info["title"] or "(empty)"
+        print(f"{idx:<4} {dt:<12} {sz:<8} {info['msg_count']:<6} {proj:<20} {title}")
 
     print(
         f"\nTotal: {len(results)} sessions. Use `import <#|id|latest>` to import one."
