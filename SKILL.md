@@ -19,26 +19,41 @@ When user asks to continue from Claude Code or import a session:
 
 ### Step 1: List Available Sessions
 
-Run the CLI tool to show recent Claude Code sessions:
+Run the CLI with `--json` to get structured session data:
 
 ```bash
-python3 ~/.config/opencode/skills/cc-handoff/scripts/cc-handoff.py list
+python3 ~/.config/opencode/skills/cc-handoff/scripts/cc-handoff.py list --json
 ```
-
-This shows a table of recent sessions with: session ID, project, date, size, message count, and title (first user message).
 
 Options:
 - `--limit N` — show N sessions (default: 15)
 - `--project KEYWORD` — filter by project path keyword
+- `--json` — output as JSON array (for building selection UI)
 
-### Step 2: Let User Choose
+### Step 2: Let User Choose via Question Tool
 
-**Present the CLI output AS-IS to the user. Do NOT reformat it into a markdown table — the original output contains full path details (└─ lines) and size info that would be lost.**
+Parse the JSON output and use the `question` tool to present choices. Build each option like this:
 
-Each row shows an 8-char session ID prefix. Ask which session to import. User can specify by:
-- Session ID (8+ chars from the ID column, e.g. `a1302f9c`) — **preferred**
-- "latest" for the most recent session
-- Row number (less reliable — may shift between calls)
+- **label**: `#N title` (e.g. `#13 feat_EPO 进度跟踪`)
+- **description**: `[id_short] date | msgs msgs | project_path` (e.g. `[3d438b99] 04-03 16:02 | 1072 msgs | ~/wb/projcet/ai/system/worktree/claude`)
+
+Use the full `project` path (not `project_short`) in the description so users can distinguish sessions from different worktrees.
+
+Example question call:
+
+```
+question(questions=[{
+  header: "选择会话",
+  question: "你想导入哪个 Claude Code 会话继续工作？",
+  options: [
+    { label: "#13 feat_EPO 进度跟踪", description: "[3d438b99] 04-03 16:02 | 1072 msgs | ~/wb/projcet/ai/system/worktree/claude" },
+    { label: "#14 feat_EPO 进度跟踪", description: "[90a83588] 04-03 16:02 | 1452 msgs | ~/wb/projcet/wb/project/service/worktree/claude" },
+    ...
+  ]
+}])
+```
+
+After user selects, extract the `id_short` from the chosen option's description and use it for import.
 
 ### Step 3: Convert & Import
 

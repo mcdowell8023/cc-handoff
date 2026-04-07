@@ -666,6 +666,7 @@ def convert_jsonl_to_opencode(input_path, output_path=None):
 def cmd_list(args):
     limit = 15
     project_filter = None
+    json_mode = False
 
     i = 0
     while i < len(args):
@@ -675,6 +676,9 @@ def cmd_list(args):
         elif args[i] == "--project" and i + 1 < len(args):
             project_filter = args[i + 1].lower()
             i += 2
+        elif args[i] == "--json":
+            json_mode = True
+            i += 1
         else:
             i += 1
 
@@ -694,8 +698,33 @@ def cmd_list(args):
             break
 
     if not results:
-        print("No Claude Code sessions found.")
-        print(f"Looking in: {CLAUDE_PROJECTS}")
+        if json_mode:
+            print("[]")
+        else:
+            print("No Claude Code sessions found.")
+            print(f"Looking in: {CLAUDE_PROJECTS}")
+        return
+
+    if json_mode:
+        out = []
+        for idx, info in enumerate(results, 1):
+            out.append(
+                {
+                    "num": idx,
+                    "id": info["session_id"],
+                    "id_short": info["session_id"][:8],
+                    "date": datetime.fromtimestamp(info["mtime"]).strftime(
+                        "%m-%d %H:%M"
+                    ),
+                    "size_kb": info["size"] // 1024,
+                    "msgs": info["msg_count"],
+                    "project": info["project"],
+                    "project_short": info["project_short"],
+                    "title": info["title"] or "(empty)",
+                    "git_branch": info.get("git_branch", ""),
+                }
+            )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
         return
 
     print(
