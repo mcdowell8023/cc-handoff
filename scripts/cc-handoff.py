@@ -698,20 +698,26 @@ def cmd_list(args):
         print(f"Looking in: {CLAUDE_PROJECTS}")
         return
 
-    print(f"\n{'#':<4} {'Date':<12} {'Size':<8} {'Msgs':<6} {'Project':<28} Title")
-    print("─" * 110)
+    print(
+        f"\n{'#':<4} {'ID':<10} {'Date':<12} {'Size':<8} {'Msgs':<6} {'Project':<28} Title"
+    )
+    print("─" * 120)
     for idx, info in enumerate(results, 1):
         dt = datetime.fromtimestamp(info["mtime"]).strftime("%m-%d %H:%M")
         sz = f"{info['size'] // 1024}KB"
         proj = info["project_short"][:26]
         title = info["title"] or "(empty)"
-        print(f"{idx:<4} {dt:<12} {sz:<8} {info['msg_count']:<6} {proj:<28} {title}")
+        sid_short = info["session_id"][:8]
+        print(
+            f"{idx:<4} {sid_short:<10} {dt:<12} {sz:<8} {info['msg_count']:<6} {proj:<28} {title}"
+        )
         full_path = info.get("project", "")
         if full_path and full_path != info["project_short"]:
-            print(f"{'':4} {'':12} {'':8} {'':6} └─ ~/{full_path}")
+            print(f"{'':4} {'':10} {'':12} {'':8} {'':6} └─ ~/{full_path}")
 
+    print(f"\nTotal: {len(results)} sessions.")
     print(
-        f"\nTotal: {len(results)} sessions. Use `import <#|id|latest>` to import one."
+        "Use `import <session-id>` (8+ char ID) to import. Row numbers may shift between calls."
     )
 
 
