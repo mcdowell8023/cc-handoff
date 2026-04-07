@@ -75,8 +75,47 @@ This shows auto-generated handoff files from `~/.claude/handoffs/`. The latest o
 | `cc-handoff.py list --project ai-system` | Filter by project |
 | `cc-handoff.py import <id>` | Convert + import a session |
 | `cc-handoff.py import latest` | Import most recent session |
-| `cc-handoff.py list-handoffs` | Show auto-generated handoffs |
 | `cc-handoff.py info <id>` | Show session details without importing |
+| `cc-handoff.py set-title <id> <title>` | Cache a smart title for a session |
+| `cc-handoff.py generate-titles` | Output sessions needing titles (JSON) |
+| `cc-handoff.py list-handoffs` | Show auto-generated handoffs |
+
+## Smart Title Generation
+
+Sessions listed by `list` show auto-extracted titles (first user message or todo summary). For better readability, you can generate LLM-powered titles.
+
+### When to Use
+
+- User says "generate titles", "improve session titles", or sessions are hard to distinguish
+- After listing sessions and seeing generic/duplicate titles
+
+### Workflow
+
+**Step 1**: Get sessions that need titles:
+
+```bash
+python3 ~/.config/opencode/skills/cc-handoff/scripts/cc-handoff.py generate-titles
+```
+
+This outputs JSON with `session_id`, `project`, `git_branch`, `first_msg`, `msg_count`, and `date` for each untitled session.
+
+**Step 2**: For each session in the output, generate a concise title (3-7 words, sentence-case) that captures the main topic or goal. Use the `first_msg`, `project`, and `git_branch` as context.
+
+**Step 3**: Save each title:
+
+```bash
+python3 ~/.config/opencode/skills/cc-handoff/scripts/cc-handoff.py set-title <session-id> <title words>
+```
+
+**Step 4**: Verify with `list` — cached titles now appear instead of auto-extracted ones.
+
+### Title Generation Guidelines
+
+- 3-7 words, sentence case (e.g. "JWT auth middleware setup")
+- Capture the main goal, not the first message verbatim
+- Include domain context when helpful (e.g. "Dashboard chart performance fix")
+- Avoid generic titles like "Code review" or "Bug fix"
+- Ask user for confirmation before batch-generating (consumes LLM tokens)
 
 ## File Locations
 

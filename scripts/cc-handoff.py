@@ -6,6 +6,8 @@ Commands:
   list [--limit N] [--project KEYWORD]   List Claude Code sessions
   info <session-id>                       Show session details
   import <session-id|number|latest>       Convert + import into OpenCode
+  set-title <session-id> <title>          Cache a human-readable session title
+  generate-titles                         Output sessions needing titles (for LLM)
   list-handoffs                           Show auto-generated handoff files
 
 Session IDs can be partial (first 8+ chars match).
@@ -24,7 +26,28 @@ from pathlib import Path
 
 CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
 CLAUDE_HANDOFFS = os.path.expanduser("~/.claude/handoffs")
+TITLE_CACHE_PATH = os.path.expanduser(
+    "~/.config/opencode/skills/cc-handoff/title-cache.json"
+)
 OPENCODE_BIN = None
+
+
+def load_title_cache():
+    """Load {session_id: title} from title-cache.json."""
+    if not os.path.isfile(TITLE_CACHE_PATH):
+        return {}
+    try:
+        with open(TITLE_CACHE_PATH, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_title_cache(cache):
+    """Write {session_id: title} to title-cache.json."""
+    os.makedirs(os.path.dirname(TITLE_CACHE_PATH), exist_ok=True)
+    with open(TITLE_CACHE_PATH, "w") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
 def find_opencode():
@@ -656,12 +679,16 @@ def cmd_list(args):
             i += 1
 
     sessions = find_all_sessions()
+    title_cache = load_title_cache()
     results = []
 
     for path in sessions:
         info = scan_session(path, quick=True)
         if project_filter and project_filter not in info["project"].lower():
             continue
+        cached = title_cache.get(info["session_id"])
+        if cached:
+            info["title"] = cached
         results.append(info)
         if len(results) >= limit:
             break
@@ -865,6 +892,80 @@ def cmd_list_handoffs(args):
                 print(f"  {line.strip()}")
 
 
+def cmd_set_title(args):
+    if len(args) < 2:
+        print("Usage: cc-handoff.py set-title <session-id> <title...>", file=sys.stderr)
+        sys.exit(1)
+
+    sid = args[0]
+    title = " ".join(args[1:])
+
+    path = find_session_by_id(sid)
+    if not path:
+        print(f"Session not found: {sid}", file=sys.stderr)
+        sys.exit(1)
+
+    full_sid = os.path.splitext(os.path.basename(path))[0]
+    cache = load_title_cache()
+    cache[full_sid] = title
+    save_title_cache(cache)
+    print(f"Title set: {full_sid[:12]}... → {title}")
+
+
+def cmd_generate_titles(args):
+    sessions = find_all_sessions()
+    cache = load_title_cache()
+    limit = 20
+
+    i = 0
+    while i < len(args):
+        if args[i] == "--limit" and i + 1 < len(args):
+            limit = int(args[i + 1])
+            i += 2
+        else:
+            i += 1
+
+    needs_title = []
+    for path in sessions:
+        sid = os.path.splitext(os.path.basename(path))[0]
+        if sid in cache:
+            continue
+        info = scan_session(path, quick=True)
+        snippet = info.get("first_user_msg", "")[:300]
+        if not snippet:
+            continue
+        needs_title.append(
+            {
+                "session_id": sid,
+                "project": info.get("project", ""),
+                "git_branch": info.get("git_branch", ""),
+                "first_msg": snippet,
+                "msg_count": info.get("msg_count", 0),
+                "date": datetime.fromtimestamp(info["mtime"]).strftime("%Y-%m-%d"),
+            }
+        )
+        if len(needs_title) >= limit:
+            break
+
+    if not needs_title:
+        print("All sessions already have cached titles.")
+        return
+
+    print(json.dumps(needs_title, ensure_ascii=False, indent=2))
+    print(
+        f"\n# {len(needs_title)} sessions need titles.",
+        file=sys.stderr,
+    )
+    print(
+        "# For each, generate a 3-7 word title and run:",
+        file=sys.stderr,
+    )
+    print(
+        "#   cc-handoff.py set-title <session-id> <title>",
+        file=sys.stderr,
+    )
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -878,6 +979,8 @@ def main():
         "ls": cmd_list,
         "info": cmd_info,
         "import": cmd_import,
+        "set-title": cmd_set_title,
+        "generate-titles": cmd_generate_titles,
         "list-handoffs": cmd_list_handoffs,
         "handoffs": cmd_list_handoffs,
     }
