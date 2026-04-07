@@ -33,7 +33,9 @@ Options:
 
 ### Step 2: Let User Choose
 
-Present the session list to the user. Each row shows an 8-char session ID prefix. Ask which session to import. User can specify by:
+**Present the CLI output AS-IS to the user. Do NOT reformat it into a markdown table — the original output contains full path details (└─ lines) and size info that would be lost.**
+
+Each row shows an 8-char session ID prefix. Ask which session to import. User can specify by:
 - Session ID (8+ chars from the ID column, e.g. `a1302f9c`) — **preferred**
 - "latest" for the most recent session
 - Row number (less reliable — may shift between calls)
