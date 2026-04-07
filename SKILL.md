@@ -69,14 +69,29 @@ This automatically:
 3. Runs `opencode import` to load the session
 4. Outputs the **OpenCode session ID** and **source CC session ID**
 
-### Step 4: Continue Working
+### Step 4: Summarize the Imported Session
 
-After import succeeds, the output shows:
-- `OpenCode session ID` — use this to reference the imported session
-- `Source CC session` — the original Claude Code session ID
-- `Project` — the project path
+After import succeeds, you MUST summarize what was done in the Claude Code session. Do NOT just say "imported successfully" and stop.
 
-**DO NOT** search for or read from other existing sessions. The import output tells you exactly which session was created. Tell the user the import succeeded and they can continue working in OpenCode.
+**4a.** Show the import result info (OpenCode session ID, source CC session, message count).
+
+**4b.** Run `info` to get session details:
+
+```bash
+python3 ~/.config/opencode/skills/cc-handoff/scripts/cc-handoff.py info <session-id>
+```
+
+This shows: todo state, files modified, first user message, CWD, etc.
+
+**4c.** Summarize to the user:
+- What was the session about (from first user message + todo items)
+- Current progress: which todos are ✅ completed, 🔄 in progress, ⬜ pending
+- Files that were modified
+- What remains to be done (pending/in-progress todos)
+
+**4d.** Ask the user: "要继续未完成的工作，还是做别的？"
+
+**DO NOT** search for or read from other existing OpenCode sessions. Only use the `info` output from the source CC session ID.
 
 ## Auto-Handoff (Rate Limit)
 
