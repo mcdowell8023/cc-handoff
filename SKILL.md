@@ -33,29 +33,33 @@ Options:
 
 ### Step 2: Let User Choose
 
-Present the session list to the user. Ask which session to import. User can specify by:
-- Session ID (full or partial, e.g. `a1302f9c`)
-- Row number from the list
+Present the session list to the user. Each row shows an 8-char session ID prefix. Ask which session to import. User can specify by:
+- Session ID (8+ chars from the ID column, e.g. `a1302f9c`) — **preferred**
 - "latest" for the most recent session
+- Row number (less reliable — may shift between calls)
 
 ### Step 3: Convert & Import
 
+**IMPORTANT: Always use session ID (8+ chars), not row numbers. Row numbers can shift between calls.**
+
 ```bash
-python3 ~/.config/opencode/skills/cc-handoff/scripts/cc-handoff.py import <session-id-or-number>
+python3 ~/.config/opencode/skills/cc-handoff/scripts/cc-handoff.py import <session-id>
 ```
 
 This automatically:
 1. Finds the JSONL transcript
 2. Converts Claude Code format → OpenCode format
 3. Runs `opencode import` to load the session
-4. Reports the imported session ID
+4. Outputs the **OpenCode session ID** and **source CC session ID**
 
 ### Step 4: Continue Working
 
-After import succeeds, tell the user:
-- The session is now available in OpenCode's session list
-- They can continue the conversation naturally
-- All tool calls, file edits, and todo state from Claude Code are preserved as context
+After import succeeds, the output shows:
+- `OpenCode session ID` — use this to reference the imported session
+- `Source CC session` — the original Claude Code session ID
+- `Project` — the project path
+
+**DO NOT** search for or read from other existing sessions. The import output tells you exactly which session was created. Tell the user the import succeeded and they can continue working in OpenCode.
 
 ## Auto-Handoff (Rate Limit)
 

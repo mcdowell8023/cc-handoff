@@ -721,13 +721,31 @@ def cmd_list(args):
     )
 
 
+def resolve_session_path(target):
+    """Resolve a target (session-id, row number, or 'latest') to a JSONL path."""
+    sessions = find_all_sessions()
+
+    if target == "latest":
+        return sessions[0] if sessions else None
+    if target.isdigit():
+        idx = int(target) - 1
+        if 0 <= idx < len(sessions):
+            return sessions[idx]
+        print(
+            f"Invalid row number: {target} (have {len(sessions)} sessions)",
+            file=sys.stderr,
+        )
+        return None
+    return find_session_by_id(target)
+
+
 def cmd_info(args):
     if not args:
-        print("Usage: cc-handoff.py info <session-id>", file=sys.stderr)
+        print("Usage: cc-handoff.py info <session-id|number|latest>", file=sys.stderr)
         sys.exit(1)
 
     target = args[0]
-    path = find_session_by_id(target)
+    path = resolve_session_path(target)
     if not path:
         print(f"Session not found: {target}", file=sys.stderr)
         sys.exit(1)
@@ -774,24 +792,7 @@ def cmd_import(args):
         sys.exit(1)
 
     target = args[0]
-    sessions = find_all_sessions()
-
-    path = None
-    if target == "latest":
-        if sessions:
-            path = sessions[0]
-    elif target.isdigit():
-        idx = int(target) - 1
-        if 0 <= idx < len(sessions):
-            path = sessions[idx]
-        else:
-            print(
-                f"Invalid row number: {target} (have {len(sessions)} sessions)",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-    else:
-        path = find_session_by_id(target)
+    path = resolve_session_path(target)
 
     if not path:
         print(f"Session not found: {target}", file=sys.stderr)
@@ -832,9 +833,14 @@ def cmd_import(args):
             timeout=30,
         )
         if result.returncode == 0:
+            oc_session_id = oc_data.get("info", {}).get("id", "")
             print(f"✅ Imported successfully!")
-            print(f"\nThe session is now available in OpenCode.")
-            print(f"You can continue the conversation naturally.")
+            print(f"\nOpenCode session ID: {oc_session_id}")
+            print(f"Source CC session:   {session_id}")
+            print(
+                f"Project:             {decode_project_path(os.path.basename(os.path.dirname(path)))}"
+            )
+            print(f"\nTo continue, open this session in OpenCode.")
         else:
             print(f"Import returned code {result.returncode}")
             if result.stderr:
