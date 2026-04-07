@@ -42,7 +42,13 @@ def find_opencode():
 
 
 def decode_project_path(dirname):
-    return dirname.replace("-", "/").lstrip("/")
+    raw = dirname.replace("-", "/").lstrip("/")
+    home = os.path.expanduser("~").lstrip("/")
+    if raw.startswith(home + "/"):
+        raw = raw[len(home) + 1 :]
+    elif raw.startswith(home):
+        raw = raw[len(home) :]
+    return raw or "~"
 
 
 def parse_timestamp(ts_str):
@@ -161,8 +167,12 @@ def scan_session(jsonl_path, quick=True):
 
     parent = os.path.basename(os.path.dirname(jsonl_path))
     info["project"] = decode_project_path(parent)
-    parts = info["project"].rstrip("/").split("/")
-    info["project_short"] = parts[-1] if parts else ""
+    parts = [p for p in info["project"].rstrip("/").split("/") if p]
+    # Show last 2 path segments for better disambiguation (e.g. "ai-system/claude")
+    if len(parts) >= 2:
+        info["project_short"] = parts[-2] + "/" + parts[-1]
+    else:
+        info["project_short"] = parts[-1] if parts else ""
 
     line_limit = 80 if quick else None
     line_num = 0
@@ -287,17 +297,18 @@ def _scan_tail_for_todo(jsonl_path, tail_bytes=50000):
 
 
 def _build_title(info, last_todo_summary):
+    branch = info.get("git_branch", "")
+    prefix = f"[{branch}] " if branch else ""
+
     if last_todo_summary:
-        return last_todo_summary[:60]
+        body = last_todo_summary[:60]
+    elif info.get("first_user_msg", ""):
+        clean = re.sub(r"[\n\r\t]+", " ", info["first_user_msg"]).strip()
+        body = clean[:47] + "..." if len(clean) > 50 else clean
+    else:
+        body = "(empty session)"
 
-    first_msg = info.get("first_user_msg", "")
-    if first_msg:
-        clean = re.sub(r"[\n\r\t]+", " ", first_msg).strip()
-        if len(clean) > 50:
-            clean = clean[:47] + "..."
-        return clean
-
-    return "(empty session)"
+    return prefix + body
 
 
 def find_all_sessions():
@@ -660,14 +671,17 @@ def cmd_list(args):
         print(f"Looking in: {CLAUDE_PROJECTS}")
         return
 
-    print(f"\n{'#':<4} {'Date':<12} {'Size':<8} {'Msgs':<6} {'Project':<20} Title")
-    print("─" * 100)
+    print(f"\n{'#':<4} {'Date':<12} {'Size':<8} {'Msgs':<6} {'Project':<28} Title")
+    print("─" * 110)
     for idx, info in enumerate(results, 1):
         dt = datetime.fromtimestamp(info["mtime"]).strftime("%m-%d %H:%M")
         sz = f"{info['size'] // 1024}KB"
-        proj = info["project_short"][:18]
+        proj = info["project_short"][:26]
         title = info["title"] or "(empty)"
-        print(f"{idx:<4} {dt:<12} {sz:<8} {info['msg_count']:<6} {proj:<20} {title}")
+        print(f"{idx:<4} {dt:<12} {sz:<8} {info['msg_count']:<6} {proj:<28} {title}")
+        full_path = info.get("project", "")
+        if full_path and full_path != info["project_short"]:
+            print(f"{'':4} {'':12} {'':8} {'':6} └─ ~/{full_path}")
 
     print(
         f"\nTotal: {len(results)} sessions. Use `import <#|id|latest>` to import one."
